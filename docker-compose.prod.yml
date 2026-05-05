@@ -1,0 +1,215 @@
+version: "3.8"
+
+services:
+  pgdb:
+    image: postgres:15
+    restart: always
+    ports:
+      - "${POSTGRES_PUBLISHED_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-market_vision_db}
+      POSTGRES_USER: ${POSTGRES_USER:-market_vision_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market_vision_password}
+    volumes:
+      - pgdb_data:/var/lib/postgresql/data
+    networks:
+      - market_vision_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-market_vision_user} -d ${POSTGRES_DB:-market_vision_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    expose:
+      - "6379"
+    networks:
+      - market_vision_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: always
+    command:
+      - "gotenberg"
+      - "--api-timeout=120s"
+      - "--libreoffice-auto-start=true"
+      - "--libreoffice-idle-shutdown-timeout=0"
+    expose:
+      - "3000"
+    networks:
+      - market_vision_network
+
+  backend:
+    image: maksig/market-vision-backend:${IMAGE_TAG:-latest}
+    restart: always
+    expose:
+      - "8000"
+    depends_on:
+      pgdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_started
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
+      POSTGRES_DB: ${POSTGRES_DB:-market_vision_db}
+      POSTGRES_USER: ${POSTGRES_USER:-market_vision_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market_vision_password}
+      POSTGRES_HOST: pgdb
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_LAYERS_REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOTENBERG_URL: http://gotenberg:3000
+      GOTENBERG_TIMEOUT: "120"
+    volumes:
+      - backend_media:/app/media
+      - backend_static:/app/staticfiles
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             python manage.py create_currencies &&
+             python manage.py create_indexes &&
+             python manage.py get_fixings_alltime &&
+             daphne -b 0.0.0.0 -p 8000 market_vision_backend.asgi:application"
+    networks:
+      - market_vision_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, json; response = urllib.request.urlopen('http://localhost:8000/api/health/'); data = json.loads(response.read()); exit(0 if data.get('status') == 'healthy' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery:
+    image: maksig/market-vision-backend:${IMAGE_TAG:-latest}
+    restart: always
+    command: celery -A market_vision_backend worker --loglevel=info
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
+      POSTGRES_DB: ${POSTGRES_DB:-market_vision_db}
+      POSTGRES_USER: ${POSTGRES_USER:-market_vision_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market_vision_password}
+      POSTGRES_HOST: pgdb
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_LAYERS_REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOTENBERG_URL: http://gotenberg:3000
+      GOTENBERG_TIMEOUT: "120"
+    depends_on:
+      pgdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - market_vision_network
+
+  celery-beat:
+    image: maksig/market-vision-backend:${IMAGE_TAG:-latest}
+    restart: always
+    command: celery -A market_vision_backend beat --loglevel=info
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
+      POSTGRES_DB: ${POSTGRES_DB:-market_vision_db}
+      POSTGRES_USER: ${POSTGRES_USER:-market_vision_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market_vision_password}
+      POSTGRES_HOST: pgdb
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_LAYERS_REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOTENBERG_URL: http://gotenberg:3000
+      GOTENBERG_TIMEOUT: "120"
+    depends_on:
+      pgdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - market_vision_network
+
+  flower:
+    image: maksig/market-vision-backend:${IMAGE_TAG:-latest}
+    restart: always
+    command: celery -A market_vision_backend flower --port=5555
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
+      POSTGRES_DB: ${POSTGRES_DB:-market_vision_db}
+      POSTGRES_USER: ${POSTGRES_USER:-market_vision_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market_vision_password}
+      POSTGRES_HOST: pgdb
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_LAYERS_REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOTENBERG_URL: http://gotenberg:3000
+      GOTENBERG_TIMEOUT: "120"
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5555:5555"
+    networks:
+      - market_vision_network
+
+  frontend:
+    image: maksig/market-vision-frontend:${IMAGE_TAG:-latest}
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - backend_static:/app/staticfiles:ro
+    networks:
+      - market_vision_network
+
+networks:
+  market_vision_network:
+    driver: bridge
+
+volumes:
+  pgdb_data:
+  backend_media:
+  backend_static:
