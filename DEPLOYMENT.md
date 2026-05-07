@@ -128,6 +128,7 @@ The app containers connect to Postgres inside Docker as `pgdb:5432`.
 - The selected `POSTGRES_PUBLISHED_PORT` is not used by another service.
 - Port `5555` is open only if Flower should be public.
 - If the Docker Hub images are private, the server must be logged in to Docker Hub.
+- The `init-backend-volumes` service prepares permissions for Django media/static volumes before backend starts.
 
 Run once on the server:
 
@@ -141,6 +142,7 @@ Useful server diagnostics:
 
 ```bash
 cd /opt/market_vision
+ls -la .env docker-compose.prod.yml
 docker compose --env-file .env -f docker-compose.prod.yml ps
 docker compose --env-file .env -f docker-compose.prod.yml logs backend --tail=200
 ```

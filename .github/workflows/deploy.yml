@@ -67,6 +67,17 @@ jobs:
             EOF
             sed -i 's/^[[:space:]]*//' .env
             chmod 600 .env
+            test -s .env
+            echo "Created $(pwd)/.env"
+            ls -la .env docker-compose.prod.yml
 
             docker compose --env-file .env -f docker-compose.prod.yml pull
-            docker compose --env-file .env -f docker-compose.prod.yml up -d
+            if ! docker compose --env-file .env -f docker-compose.prod.yml up -d; then
+              echo "docker compose up failed; showing backend diagnostics"
+              docker compose --env-file .env -f docker-compose.prod.yml ps
+              docker compose --env-file .env -f docker-compose.prod.yml logs backend --tail=200
+              docker inspect market_vision-backend-1 --format='{{json .State.Health}}' || true
+              exit 1
+            fi
+
+            docker compose --env-file .env -f docker-compose.prod.yml ps

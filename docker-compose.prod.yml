@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   pgdb:
     image: postgres:15
@@ -46,6 +44,17 @@ services:
     networks:
       - market_vision_network
 
+  init-backend-volumes:
+    image: maksig/market-vision-backend:${IMAGE_TAG:-latest}
+    user: root
+    command: sh -c "mkdir -p /app/media /app/staticfiles && chown -R appuser:appuser /app/media /app/staticfiles"
+    volumes:
+      - backend_media:/app/media
+      - backend_static:/app/staticfiles
+    networks:
+      - market_vision_network
+    restart: "no"
+
   backend:
     image: maksig/market-vision-backend:${IMAGE_TAG:-latest}
     restart: always
@@ -58,6 +67,8 @@ services:
         condition: service_healthy
       gotenberg:
         condition: service_started
+      init-backend-volumes:
+        condition: service_completed_successfully
     environment:
       DJANGO_ENV: production
       DEBUG: "0"
@@ -126,6 +137,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      init-backend-volumes:
+        condition: service_completed_successfully
     networks:
       - market_vision_network
 
@@ -158,6 +171,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      init-backend-volumes:
+        condition: service_completed_successfully
     networks:
       - market_vision_network
 
@@ -200,7 +215,7 @@ services:
       - "80:80"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - backend_static:/app/staticfiles:ro
     networks:
