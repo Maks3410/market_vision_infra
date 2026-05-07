@@ -92,9 +92,10 @@ services:
       - market_vision_network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, json; response = urllib.request.urlopen('http://localhost:8000/api/health/'); data = json.loads(response.read()); exit(0 if data.get('status') == 'healthy' else 1)"]
+      start_period: 10m
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 10
 
   celery:
     image: maksig/market-vision-backend:${IMAGE_TAG:-latest}

@@ -1,0 +1,8 @@
+*
+
+!.gitignore
+!DEPLOYMENT.md
+!docker-compose.prod.yml
+!.github/
+!.github/workflows/
+!.github/workflows/deploy.yml

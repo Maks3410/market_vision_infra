@@ -13,6 +13,7 @@ The project uses three GitHub repositories:
 3. The workflow sends a `repository_dispatch` event to `market_vision_infra`.
 4. The infra workflow uploads `docker-compose.prod.yml` to the server.
 5. The infra workflow runs `docker compose pull` and `docker compose up -d`.
+6. The infra workflow creates `/opt/market_vision/.env` from GitHub Secrets for future compose commands on the server.
 
 ## Files by repository
 
@@ -134,4 +135,12 @@ Run once on the server:
 mkdir -p /opt/market_vision
 docker --version
 docker compose version
+```
+
+Useful server diagnostics:
+
+```bash
+cd /opt/market_vision
+docker compose --env-file .env -f docker-compose.prod.yml ps
+docker compose --env-file .env -f docker-compose.prod.yml logs backend --tail=200
 ```
